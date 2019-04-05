@@ -43,14 +43,14 @@ type Packet struct {
 }
 
 func (p Packet) Missing(other Packet) uint32 {
-  if p.VMUHeader.Channel != other.VMUHeader.Channel {
-    return 0
-  }
-  diff := p.VMUHeader.Sequence - other.VMUHeader.Sequence
-  if diff != p.VMUHeader.Sequence {
-    diff--
-  }
-  return diff
+	if p.VMUHeader.Channel != other.VMUHeader.Channel {
+		return 0
+	}
+	diff := p.VMUHeader.Sequence - other.VMUHeader.Sequence
+	if diff != p.VMUHeader.Sequence {
+		diff--
+	}
+	return diff
 }
 
 func (p Packet) IsRealtime() bool {
@@ -156,17 +156,17 @@ func decodePacket(buffer []byte, data bool) (p Packet, err error) {
 	if p.VMUHeader, err = decodeVMU(buffer[offset:]); err != nil {
 		return
 	}
-  expected := offset + VMUHeaderLen + HRDLHeaderLen
-  switch p.VMUHeader.Channel {
-  case VIC1, VIC2:
-    expected += IMGHeaderLen
-  case LRSD:
-    expected += SCCHeaderLen
-  }
-  if len(buffer) < expected {
-    err = ErrSkip
-    return
-  }
+	expected := offset + VMUHeaderLen + HRDLHeaderLen
+	switch p.VMUHeader.Channel {
+	case VIC1, VIC2:
+		expected += IMGHeaderLen
+	case LRSD:
+		expected += SCCHeaderLen
+	}
+	if len(buffer) < expected {
+		err = ErrSkip
+		return
+	}
 
 	offset += HRDLHeaderLen + VMUHeaderLen
 	if p.DataHeader, err = decodeData(buffer[offset:]); err != nil {
@@ -199,10 +199,10 @@ func decodePacket(buffer []byte, data bool) (p Packet, err error) {
 }
 
 func decodeHRDP(body []byte) (HRDPHeader, error) {
-  var h HRDPHeader
-  if len(body) < HRDPHeaderLen {
-    return h, ErrSkip
-  }
+	var h HRDPHeader
+	if len(body) < HRDPHeaderLen {
+		return h, ErrSkip
+	}
 
 	h.Size = binary.LittleEndian.Uint32(body)
 	h.Error = binary.BigEndian.Uint16(body[4:])
@@ -218,9 +218,9 @@ func decodeHRDP(body []byte) (HRDPHeader, error) {
 
 func decodeVMU(body []byte) (VMUHeader, error) {
 	var v VMUHeader
-  if len(body) < HRDLHeaderLen+VMUHeaderLen {
-    return v, ErrSkip
-  }
+	if len(body) < HRDLHeaderLen+VMUHeaderLen {
+		return v, ErrSkip
+	}
 
 	if word := binary.BigEndian.Uint32(body); word != Syncword {
 		return v, ErrSyncword
@@ -239,18 +239,18 @@ func decodeData(body []byte) (DataHeader, error) {
 	var v DataHeader
 
 	v.Property = body[0]
-  var expected int
-  switch v.Property >> 4 {
-  case 1:
-    expected = SCCHeaderLen
-  case 2:
-    expected = IMGHeaderLen
-  default:
-    return v, ErrSkip
-  }
-  if len(body) < expected {
-    return v, ErrSkip
-  }
+	var expected int
+	switch v.Property >> 4 {
+	case 1:
+		expected = SCCHeaderLen
+	case 2:
+		expected = IMGHeaderLen
+	default:
+		return v, ErrSkip
+	}
+	if len(body) < expected {
+		return v, ErrSkip
+	}
 	v.Stream = binary.LittleEndian.Uint16(body[1:])
 	v.Counter = binary.LittleEndian.Uint32(body[3:])
 	v.AcqTime = time.Duration(binary.LittleEndian.Uint64(body[7:]))
