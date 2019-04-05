@@ -140,11 +140,19 @@ func (d DataHeader) Auxiliary() time.Time {
 }
 
 func decodePacket(buffer []byte, data bool) (p Packet, err error) {
-	var offset int
-	if p.HRDPHeader, err = decodeHRDP(buffer); err != nil {
+	var offset, base int
+	if len(buffer) < 4 {
+		err = ErrSkip
 		return
 	}
-	offset += HRDPHeaderLen
+	if w := binary.BigEndian.Uint32(buffer); w != Syncword {
+		if p.HRDPHeader, err = decodeHRDP(buffer); err != nil {
+			return
+		}
+		offset += HRDPHeaderLen
+		base = offset
+	}
+	base += HRDLHeaderLen
 	if p.VMUHeader, err = decodeVMU(buffer[offset:]); err != nil {
 		return
 	}
@@ -182,7 +190,7 @@ func decodePacket(buffer []byte, data bool) (p Packet, err error) {
 		p.Data = append(p.Data, buffer[offset:offset+length]...)
 	}
 
-	sum := Sum(buffer[HRDPHeaderLen+HRDLHeaderLen : n-4])
+	sum := Sum(buffer[base : n-4])
 	p.Sum = binary.LittleEndian.Uint32(buffer[n-4:])
 	if p.Sum != sum {
 		err = ErrInvalid
