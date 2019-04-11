@@ -12,7 +12,6 @@ import (
 	"github.com/busoc/vmu"
 	"github.com/midbel/cli"
 	"github.com/midbel/linewriter"
-	"github.com/midbel/xxh"
 )
 
 var (
@@ -266,40 +265,6 @@ func Decode(files []string) (*vmu.Decoder, error) {
 		return nil, err
 	}
 	return vmu.NewDecoder(rt.NewReader(mr)), nil
-}
-
-func dumpPacket(line *linewriter.Writer, p vmu.Packet, missing uint32, valid bool) {
-	defer line.Reset()
-
-	h, v, c := p.HRDPHeader, p.VMUHeader, p.DataHeader
-
-	var bad []byte
-	if !valid {
-		bad = vmu.Invalid
-	} else {
-		bad = vmu.Unknown
-	}
-
-	line.AppendUint(uint64(v.Size), 7, linewriter.AlignRight)
-	line.AppendUint(uint64(h.Error), 4, linewriter.AlignRight|linewriter.Hex|linewriter.WithZero)
-	// packet VMU info
-	line.AppendTime(v.Timestamp(), rt.TimeFormat, linewriter.AlignCenter)
-	line.AppendUint(uint64(v.Sequence), 7, linewriter.AlignRight)
-	line.AppendUint(uint64(missing), 3, linewriter.AlignRight)
-	line.AppendBytes(whichMode(p.IsRealtime()), 8, linewriter.AlignCenter|linewriter.Text)
-	line.AppendBytes(whichChannel(v.Channel), 4, linewriter.AlignCenter|linewriter.Text)
-	// packet HRD info
-	line.AppendUint(uint64(c.Origin), 2, linewriter.AlignRight|linewriter.Hex|linewriter.WithZero)
-	line.AppendTime(c.Acquisition(), rt.TimeFormat, linewriter.AlignCenter)
-	line.AppendUint(uint64(c.Counter), 8, linewriter.AlignRight)
-	line.AppendBytes(c.UserInfo(), 16, linewriter.AlignLeft|linewriter.Text)
-	// packet sums and validity state
-	line.AppendUint(uint64(p.Sum), 8, linewriter.AlignRight|linewriter.Hex|linewriter.WithZero)
-	line.AppendBytes(bad, 8, linewriter.AlignCenter|linewriter.Text)
-	if len(p.Data) > 0 {
-		line.AppendUint(xxh.Sum64(p.Data, 0), 16, linewriter.AlignRight|linewriter.Hex|linewriter.WithZero)
-	}
-	os.Stdout.Write(append(line.Bytes(), '\n'))
 }
 
 func byChannel(p vmu.Packet) uint8 {
