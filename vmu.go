@@ -1,9 +1,12 @@
 package vmu
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
 	"io"
 	"time"
 
@@ -33,14 +36,43 @@ const (
 	LRSD
 )
 
-const BufferSize = 8 << 20
+type ImageType uint8
 
-type Packet struct {
-	HRDPHeader
-	VMUHeader
-	DataHeader
-	Data []byte
-	Sum  uint32
+const (
+	Gray ImageType = iota + 1
+	Gray16BE
+	Gray16LE
+	YUY2
+	I420
+	RGB
+	JPEG
+	PNG
+	H264
+)
+
+func (i ImageType) String() string {
+	switch i {
+	default:
+		return datExt
+	case Gray:
+		return "gray"
+	case Gray16BE:
+		return "gray16be"
+	case Gray16LE:
+		return "gray16le"
+	case YUY2:
+		return "yuy2"
+	case I420:
+		return "i420"
+	case RGB:
+		return "rgb"
+	case JPEG:
+		return "jpg"
+	case PNG:
+		return "png"
+	case H264:
+		return "h264"
+	}
 }
 
 const (
@@ -53,18 +85,72 @@ const (
 	datExt = "dat"
 )
 
+const BufferSize = 8 << 20
+
+type Packet struct {
+	HRDPHeader
+	VMUHeader
+	DataHeader
+	Data []byte
+	Sum  uint32
+}
+
+func (p Packet) Export(w io.Writer, format string) error {
+	switch p.VMUHeader.Channel {
+	case VIC1, VIC2:
+		return p.ExportImage(w, format)
+	case LRSD:
+		return fmt.Errorf("unrecognized data type")
+	default:
+		return fmt.Errorf("unrecognized data type")
+	}
+}
+
+func (p Packet) ExportImage(w io.Writer, format string) error {
+	// var i image.Image
+	switch p.DataHeader.Type {
+	default:
+		return fmt.Errorf("unsupported image type")
+	case Gray:
+	case Gray16BE:
+	case Gray16LE:
+	case YUY2:
+	case I420:
+	case RGB:
+	case JPEG:
+		format = JPEG.String()
+	case PNG:
+		format = PNG.String()
+	}
+	switch format {
+	case "", "png":
+	case "jpg", "jpeg":
+	default:
+		return fmt.Errorf("unrecognized image format")
+	}
+	return nil
+}
+
+func (p Packet) DataType() string {
+	if p.VMUHeader.Channel == LRSD {
+		return datExt
+	} else {
+		return p.DataHeader.Type.String()
+	}
+}
+
 func (p Packet) String() string {
 	t := p.DataHeader.Acquisition().Format(nameTimeFormat)
 	delta := p.VMUHeader.Timestamp().Sub(p.DataHeader.Acquisition()).Minutes()
-	upi := p.UserInfo()
+	upi, ext := p.UserInfo(), datExt
 	if len(upi) == 0 {
 		if p.VMUHeader.Channel == LRSD {
 			upi = upiScience
 		} else {
 			upi = upiImage
+			ext = p.DataHeader.Type.String()
 		}
 	}
-	ext := datExt
 	return fmt.Sprintf(nameFormat, p.DataHeader.Origin, upi, p.VMUHeader.Channel, p.DataHeader.Counter, t, delta, ext)
 }
 
@@ -155,6 +241,24 @@ type DataHeader struct {
 	Stream   uint16
 	Counter  uint32
 	UPI      [UPILen]byte
+
+	// following fields are set only when Propery>>4 == 2 (Image)
+	Type ImageType
+	// original image size in pixels
+	PixelsX uint16
+	PixelsY uint16
+	// region of interest settings
+	OffsetX uint16
+	SizeX   uint16
+	OffsetY uint16
+	SizeY   uint16
+
+	Dropping uint16
+
+	// scaling settings
+	ScaleX uint16
+	ScaleY uint16
+	Ratio  uint8
 }
 
 func (d DataHeader) UserInfo() []byte {
@@ -291,7 +395,98 @@ func decodeData(body []byte) (DataHeader, error) {
 	case 1: // science
 		copy(v.UPI[:], body[24:])
 	case 2: // image
+		v.Type = ImageType(body[24])
+
+		pixels := binary.LittleEndian.Uint32(body[25:])
+		v.PixelsX = uint16(pixels >> 16)
+		v.PixelsY = uint16(pixels & 0xFFFF)
+
+		roi := binary.LittleEndian.Uint64(body[29:])
+		v.OffsetX = uint16((roi >> 48) & 0xFFFF)
+		v.SizeX = uint16((roi >> 32) & 0xFFFF)
+		v.OffsetY = uint16(roi >> 16 & 0xFFFF)
+		v.SizeY = uint16(roi & 0xFFFF)
+
+		v.Dropping = binary.LittleEndian.Uint16(body[37:])
+
+		scaling := binary.LittleEndian.Uint32(body[39:])
+		v.ScaleX = uint16(scaling >> 16)
+		v.ScaleY = uint16(scaling & 0xFFFF)
+		v.Ratio = uint8(body[43])
+
 		copy(v.UPI[:], body[44:])
 	}
 	return v, nil
+}
+
+func imageRGB(x, y int, points []byte) image.Image {
+	g := image.NewRGBA(image.Rect(0, 0, x, y))
+	buf := bytes.NewBuffer(points)
+	for i := 0; i < y; i++ {
+		for j := 0; j < x; j++ {
+			var red, green, blue uint8
+			binary.Read(buf, binary.BigEndian, &red)
+			binary.Read(buf, binary.BigEndian, &green)
+			binary.Read(buf, binary.BigEndian, &blue)
+
+			g.Set(j, i, color.RGBA{R: red, G: green, B: blue, A: 255})
+		}
+	}
+	return g
+}
+
+func imageLBR(x, y int, points []byte) image.Image {
+	g := image.NewYCbCr(image.Rect(0, 0, x, y), image.YCbCrSubsampleRatio422)
+
+	ls := make([]byte, 0, len(points)/2)
+	bs := make([]byte, 0, len(points)/4)
+	rs := make([]byte, 0, len(points)/4)
+
+	for i := 0; i < len(points); i += 4 {
+		ls = append(ls, points[i], points[i+2])
+		bs = append(rs, points[i+1])
+		rs = append(rs, points[i+3])
+	}
+	copy(g.Y, ls)
+	copy(g.Cb, bs)
+	copy(g.Cr, rs)
+
+	return g
+}
+
+func imageI420(x, y int, points []byte) image.Image {
+	g := image.NewYCbCr(image.Rect(0, 0, x, y), image.YCbCrSubsampleRatio420)
+
+	s := x * y
+	z := s / 4
+	copy(g.Y, points[:s])
+
+	copy(g.Cb, points[s:s+z])
+	copy(g.Cr, points[len(points)-z:])
+
+	return g
+}
+
+func imageGray8(x, y int, points []byte) image.Image {
+	g := image.NewGray(image.Rect(0, 0, x, y))
+	buf := bytes.NewBuffer(points)
+	for i := 0; i < y; i++ {
+		for j, c := range buf.Next(x) {
+			g.Set(j, i, color.Gray{Y: uint8(c)})
+		}
+	}
+	return g
+}
+
+func imageGray16(x, y int, points []byte, order binary.ByteOrder) image.Image {
+	g := image.NewGray16(image.Rect(0, 0, x, y))
+	buf := bytes.NewBuffer(points)
+	for i := 0; i < y; i++ {
+		for j := 0; j < x; j++ {
+			var c uint16
+			binary.Read(buf, order, &c)
+			g.Set(j, i, color.Gray16{Y: c})
+		}
+	}
+	return g
 }

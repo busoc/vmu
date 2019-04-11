@@ -103,6 +103,7 @@ func (d *Dumper) dumpPacket(p Packet, valid bool) {
 	d.line.AppendTime(c.Acquisition(), timeFormat, linewriter.AlignCenter)
 	d.line.AppendUint(uint64(c.Counter), 8, linewriter.AlignRight)
 	d.line.AppendBytes(c.UserInfo(), 16, linewriter.AlignLeft|linewriter.Text)
+	d.line.AppendString(p.DataType(), 8, linewriter.AlignRight)
 	// packet sums and validity state
 	d.line.AppendUint(uint64(p.Sum), 8, linewriter.AlignRight|linewriter.Hex|linewriter.WithZero)
 	d.line.AppendBytes(bad, 8, linewriter.AlignCenter|linewriter.Text)
