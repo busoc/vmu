@@ -3,6 +3,7 @@ package vmu
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"time"
 
@@ -40,6 +41,35 @@ type Packet struct {
 	DataHeader
 	Data []byte
 	Sum  uint32
+}
+
+const (
+	nameFormat     = "%04x_%s_%d_%06d_%s_%09d.%s"
+	nameTimeFormat = "20060102_150405"
+)
+
+const (
+	badExt = "bad"
+	datExt = "dat"
+)
+
+func (p Packet) String() string {
+	t := p.DataHeader.Acquisition().Format(nameTimeFormat)
+	delta := p.VMUHeader.Timestamp().Sub(p.DataHeader.Acquisition()).Minutes()
+	upi := p.UserInfo()
+	if len(upi) == 0 {
+		if p.VMUHeader.Channel == LRSD {
+			upi = upiScience
+		} else {
+			upi = upiImage
+		}
+	}
+	ext := datExt
+	return fmt.Sprintf(nameFormat, p.DataHeader.Origin, upi, p.VMUHeader.Channel, p.DataHeader.Counter, t, delta, ext)
+}
+
+func (p Packet) Filename() string {
+	return p.String()
 }
 
 func (p Packet) Missing(other Packet) uint32 {

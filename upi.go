@@ -6,6 +6,11 @@ import (
 
 var upibuf = make([]byte, UPILen)
 
+var (
+	upiScience = []byte("SCIENCE")
+	upiImage   = []byte("IMAGE")
+)
+
 func UserInfo(upi [UPILen]byte) []byte {
 	return userInfo(upibuf, upi)
 }

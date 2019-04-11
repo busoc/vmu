@@ -14,18 +14,6 @@ import (
 	"github.com/midbel/linewriter"
 )
 
-var (
-	modeRT = []byte("realtime")
-	modePB = []byte("playback")
-
-	chanVic1 = []byte("vic1")
-	chanVic2 = []byte("vic2")
-	chanLRSD = []byte("lrsd")
-
-	invalid = []byte("invalid")
-	unknown = []byte("***")
-)
-
 var commands = []*cli.Command{
 	{
 		Usage: "list [-e] [-i] [-g] <file...>",
