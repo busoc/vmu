@@ -56,7 +56,6 @@ func (d *Dumper) DumpRaw(body []byte) {
 
 func (d *Dumper) Dump(body []byte, invalid, raw bool) error {
 	defer d.line.Reset()
-
 	var (
 		err error
 		p   Packet
@@ -68,9 +67,9 @@ func (d *Dumper) Dump(body []byte, invalid, raw bool) error {
 		if err == nil || (err == ErrInvalid && invalid) {
 			d.dumpPacket(p, err != ErrInvalid)
 			d.seen[p.VMUHeader.Channel] = p
+			d.inner.Write(append(d.line.Bytes(), '\n'))
 		}
 	}
-	d.inner.Write(append(d.line.Bytes(), '\n'))
 	return err
 }
 
@@ -104,6 +103,7 @@ func (d *Dumper) dumpPacket(p Packet, valid bool) {
 	d.line.AppendUint(uint64(c.Counter), 8, linewriter.AlignRight)
 	d.line.AppendBytes(c.UserInfo(), 16, linewriter.AlignLeft|linewriter.Text)
 	d.line.AppendString(p.DataType(), 8, linewriter.AlignRight)
+	// d.line.AppendString(p.String(), 64, linewriter.AlignLeft)
 	// packet sums and validity state
 	d.line.AppendUint(uint64(p.Sum), 8, linewriter.AlignRight|linewriter.Hex|linewriter.WithZero)
 	d.line.AppendBytes(bad, 8, linewriter.AlignCenter|linewriter.Text)
