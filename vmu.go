@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/png"
+	"image/jpeg"
 	"image/color"
 	"io"
 	"time"
@@ -107,28 +109,41 @@ func (p Packet) Export(w io.Writer, format string) error {
 }
 
 func (p Packet) ExportImage(w io.Writer, format string) error {
-	// var i image.Image
+	if len(p.Data) == 0 {
+		return fmt.Errorf("empty packet")
+	}
+	var i image.Image
+
+	x, y := int(p.DataHeader.PixelsX), int(p.DataHeader.PixelsY)
 	switch p.DataHeader.Type {
 	default:
 		return fmt.Errorf("unsupported image type")
 	case Gray:
+		i = imageGray8(x, y, p.Data)
 	case Gray16BE:
+		i = imageGray16(x, y, p.Data, binary.BigEndian)
 	case Gray16LE:
+		i = imageGray16(x, y, p.Data, binary.LittleEndian)
 	case YUY2:
+		i = imageLBR(x, y, p.Data)
 	case I420:
+		i = imageI420(x, y, p.Data)
 	case RGB:
-	case JPEG:
-		format = JPEG.String()
-	case PNG:
-		format = PNG.String()
+		i = imageRGB(x, y, p.Data)
+	case JPEG, PNG:
+		_, err := w.Write(p.Data)
+		return err
 	}
+	var err error
 	switch format {
 	case "", "png":
+		err = png.Encode(w, i)
 	case "jpg", "jpeg":
+		err = jpeg.Encode(w, i, nil)
 	default:
-		return fmt.Errorf("unrecognized image format")
+		err = fmt.Errorf("unrecognized image format")
 	}
-	return nil
+	return err
 }
 
 func (p Packet) DataType() string {
