@@ -70,24 +70,29 @@ func runList(cmd *cli.Command, args []string) error {
 	rt := rt.NewReader(mr)
 	d := vmu.Dump(os.Stdout, *csv)
 
-	var invalid, size, skipped int
+	c := struct {
+		Invalid int
+		Size    int
+		Skipped int
+		Count   int
+	}{}
 	buffer := make([]byte, vmu.BufferSize)
 	for i := 0; ; i++ {
-		n, err := rt.Read(buffer)
-		switch err {
+		switch n, err := rt.Read(buffer); err {
 		case nil:
-			size += n
+			c.Size += n
 			if err := d.Dump(buffer[:n], *keepInvalid, false); err != nil {
 				if err == vmu.ErrInvalid {
-					invalid++
+					c.Invalid++
 				} else if err == vmu.ErrSkip {
-					skipped++
+					c.Skipped++
 				} else {
 					return err
 				}
 			}
+			c.Count++
 		case io.EOF:
-			log.Printf("%d packets (%dMB, %d invalid, %d skipped)\n", i-1, size>>20, invalid, skipped)
+			log.Printf("%d packets (%dMB, %d invalid, %d skipped)\n", c.Count, c.Size>>20, c.Invalid, c.Skipped)
 			return nil
 		default:
 			return err

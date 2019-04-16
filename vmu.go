@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	"image/png"
-	"image/jpeg"
 	"image/color"
+	"image/jpeg"
+	"image/png"
 	"io"
 	"time"
 
