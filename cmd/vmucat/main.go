@@ -72,9 +72,9 @@ func runList(cmd *cli.Command, args []string) error {
 
 	c := struct {
 		Invalid int
-		Size    int
+		Size int
 		Skipped int
-		Count   int
+		Count int
 	}{}
 	buffer := make([]byte, vmu.BufferSize)
 	for i := 0; ; i++ {
@@ -144,8 +144,7 @@ func runCount(cmd *cli.Command, args []string) error {
 	stats := make(map[uint8]rt.Coze)
 	seen := make(map[uint8]vmu.Packet)
 	for {
-		p, err := d.Decode(false)
-		switch err {
+		switch p, err := d.Decode(false); err {
 		case nil, vmu.ErrInvalid:
 			by := getBy(p)
 			cz := stats[by]
@@ -220,8 +219,7 @@ func runDiff(cmd *cli.Command, args []string) error {
 	seen := make(map[uint8]vmu.Packet)
 	line := linewriter.NewWriter(1024, linewriter.WithPadding([]byte(" ")), linewriter.WithSeparator([]byte("|")))
 	for {
-		p, err := d.Decode(false)
-		switch err {
+		switch p, err := d.Decode(false); err {
 		case nil, vmu.ErrInvalid:
 			if err == vmu.ErrInvalid && !*keepInvalid {
 				continue
