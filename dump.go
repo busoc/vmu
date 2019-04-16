@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"io"
 
+	"github.com/busoc/rt"
 	"github.com/midbel/linewriter"
 	"github.com/midbel/xxh"
 )
@@ -73,8 +74,6 @@ func (d *Dumper) Dump(body []byte, invalid, raw bool) error {
 	return err
 }
 
-const timeFormat = "2006-01-02 15:04:05.000"
-
 func (d *Dumper) dumpPacket(p Packet, valid bool) {
 	var bad []byte
 	if !valid {
@@ -92,14 +91,14 @@ func (d *Dumper) dumpPacket(p Packet, valid bool) {
 	d.line.AppendUint(uint64(v.Size), 7, linewriter.AlignRight)
 	d.line.AppendUint(uint64(h.Error), 4, linewriter.AlignRight|linewriter.Hex|linewriter.WithZero)
 	// packet VMU info
-	d.line.AppendTime(v.Timestamp(), timeFormat, linewriter.AlignCenter)
+	d.line.AppendTime(v.Timestamp(), rt.TimeFormat, linewriter.AlignCenter)
 	d.line.AppendUint(uint64(v.Sequence), 7, linewriter.AlignRight)
 	d.line.AppendUint(uint64(diff), 3, linewriter.AlignRight)
 	d.line.AppendBytes(WhichMode(p.IsRealtime()), 8, linewriter.AlignCenter|linewriter.Text)
 	d.line.AppendBytes(WhichChannel(v.Channel), 4, linewriter.AlignCenter|linewriter.Text)
 	// packet HRD info
 	d.line.AppendUint(uint64(c.Origin), 2, linewriter.AlignRight|linewriter.Hex|linewriter.WithZero)
-	d.line.AppendTime(c.Acquisition(), timeFormat, linewriter.AlignCenter)
+	d.line.AppendTime(c.Acquisition(), rt.TimeFormat, linewriter.AlignCenter)
 	d.line.AppendUint(uint64(c.Counter), 8, linewriter.AlignRight)
 	d.line.AppendBytes(c.UserInfo(), 16, linewriter.AlignLeft|linewriter.Text)
 	d.line.AppendString(p.DataType(), 8, linewriter.AlignRight)
