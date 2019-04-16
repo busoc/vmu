@@ -28,11 +28,11 @@ type Dumper struct {
 }
 
 func Dump(w io.Writer, csv bool) *Dumper {
-	var options []func(*linewriter.Writer)
+	var options []linewriter.Option
 	if csv {
 		options = append(options, linewriter.AsCSV(false))
 	} else {
-		options = []func(*linewriter.Writer){
+		options = []linewriter.Option{
 			linewriter.WithPadding([]byte(" ")),
 			linewriter.WithSeparator([]byte("|")),
 		}

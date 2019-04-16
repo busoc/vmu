@@ -57,6 +57,19 @@ func main() {
 	}
 }
 
+func whichLine(csv bool) *linewriter.Writer {
+	var options []linewriter.Option
+	if csv {
+		options = append(options, linewriter.AsCSV(true))
+	} else {
+		options = []linewriter.Option{
+			linewriter.WithPadding([]byte(" ")),
+			linewriter.WithSeparator([]byte("|")),
+		}
+	}
+	return linewriter.NewWriter(1024, options...)
+}
+
 func runList(cmd *cli.Command, args []string) error {
 	csv := cmd.Flag.Bool("c", false, "csv format")
 	keepInvalid := cmd.Flag.Bool("e", false, "keep invalid packets")
@@ -72,9 +85,9 @@ func runList(cmd *cli.Command, args []string) error {
 
 	c := struct {
 		Invalid int
-		Size int
+		Size    int
 		Skipped int
-		Count int
+		Count   int
 	}{}
 	buffer := make([]byte, vmu.BufferSize)
 	for i := 0; ; i++ {
@@ -100,6 +113,7 @@ func runList(cmd *cli.Command, args []string) error {
 	}
 }
 func runCount(cmd *cli.Command, args []string) error {
+	csv := cmd.Flag.Bool("c", false, "csv format")
 	keepInvalid := cmd.Flag.Bool("e", false, "keep invalid packets")
 	by := cmd.Flag.String("b", "", "count packets by channel or origin")
 	if err := cmd.Flag.Parse(args); err != nil {
@@ -163,7 +177,7 @@ func runCount(cmd *cli.Command, args []string) error {
 			seen[by], stats[by] = p, cz
 		case vmu.ErrSkip:
 		case io.EOF:
-			line := linewriter.NewWriter(1024, linewriter.WithPadding([]byte(" ")), linewriter.WithSeparator([]byte("|")))
+			line := whichLine(*csv)
 			for b, cz := range stats {
 				appendBy(line, b)
 				line.AppendUint(cz.Count, 6, linewriter.AlignRight)
@@ -182,6 +196,7 @@ func runCount(cmd *cli.Command, args []string) error {
 }
 
 func runDiff(cmd *cli.Command, args []string) error {
+	csv := cmd.Flag.Bool("c", false, "csv format")
 	keepInvalid := cmd.Flag.Bool("e", false, "keep invalid packets")
 	by := cmd.Flag.String("b", "", "count packets by channel or origin")
 	duration := cmd.Flag.Duration("d", time.Second, "maximum gap duration")
@@ -217,7 +232,7 @@ func runDiff(cmd *cli.Command, args []string) error {
 		return err
 	}
 	seen := make(map[uint8]vmu.Packet)
-	line := linewriter.NewWriter(1024, linewriter.WithPadding([]byte(" ")), linewriter.WithSeparator([]byte("|")))
+	line := whichLine(*csv)
 	for {
 		switch p, err := d.Decode(false); err {
 		case nil, vmu.ErrInvalid:
