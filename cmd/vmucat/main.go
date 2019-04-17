@@ -21,7 +21,7 @@ var commands = []*cli.Command{
 		Run:   runList,
 	},
 	{
-		Usage: "diff [-e with-errors] [-b by] [-c csv] <file...>",
+		Usage: "diff [-e with-errors] [-b by] [-c csv] [-d duration] <file...>",
 		Short: "",
 		Run:   runDiff,
 	},
@@ -41,7 +41,7 @@ var commands = []*cli.Command{
 		Run: runMerge,
 	},
 	{
-		Usage: "extract [-d datadir] [-e with-errors] [-c channel] <file...>"
+		Usage: "extract [-d datadir] [-e with-errors] [-c channel] <file...>",
 		Short: "",
 		Run: nil,
 	},
@@ -322,23 +322,3 @@ func gapByOrigin(p, prev vmu.Packet, duration time.Duration) (ok bool, g rt.Gap)
 	}
 	return
 }
-//
-// func whichChannel(c uint8) []byte {
-// 	switch c {
-// 	case vmu.VIC1:
-// 		return vmu.ChanVic1
-// 	case vmu.VIC2:
-// 		return vmu.ChanVic2
-// 	case vmu.LRSD:
-// 		return vmu.ChanLRSD
-// 	default:
-// 		return vmu.Unknown
-// 	}
-// }
-//
-// func whichMode(rt bool) []byte {
-// 	if rt {
-// 		return vmu.ModeRT
-// 	}
-// 	return vmu.ModePB
-// }
