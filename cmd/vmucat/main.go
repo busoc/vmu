@@ -16,19 +16,34 @@ import (
 
 var commands = []*cli.Command{
 	{
-		Usage: "list [-e] [-i] [-g] <file...>",
+		Usage: "list [-e with-errors] [-c csv] <file...>",
 		Short: "",
 		Run:   runList,
 	},
 	{
-		Usage: "diff [-e] [-i] [-g] <file...>",
+		Usage: "diff [-e with-errors] [-b by] [-c csv] <file...>",
 		Short: "",
 		Run:   runDiff,
 	},
 	{
-		Usage: "count [-e] [-b] [-g] <file...>",
+		Usage: "count [-e with-errors] [-b by] [-c csv] <file...>",
 		Short: "",
 		Run:   runCount,
+	},
+	{
+		Usage: "take [-e with-errors] [-i channel] [-d datadir] <file...>",
+		Short: "",
+		Run: runTake,
+	},
+	{
+		Usage: "merge <final> <file...>",
+		Short: "merge and reorder packets from multiple files",
+		Run: runMerge,
+	},
+	{
+		Usage: "extract [-d datadir] [-e with-errors] [-c channel] <file...>"
+		Short: "",
+		Run: nil,
 	},
 }
 
@@ -57,7 +72,7 @@ func main() {
 	}
 }
 
-func whichLine(csv bool) *linewriter.Writer {
+func Line(csv bool) *linewriter.Writer {
 	var options []linewriter.Option
 	if csv {
 		options = append(options, linewriter.AsCSV(true))
@@ -134,7 +149,7 @@ func runCount(cmd *cli.Command, args []string) error {
 			return uint64(p.VMUHeader.Sequence-prev.VMUHeader.Sequence) - 1
 		}
 		appendBy = func(line *linewriter.Writer, c uint8) {
-			line.AppendBytes(whichChannel(c), 4, linewriter.Text|linewriter.AlignLeft)
+			line.AppendBytes(vmu.WhichChannel(c), 4, linewriter.Text|linewriter.AlignLeft)
 		}
 	case "origin":
 		getBy = byOrigin
@@ -177,16 +192,14 @@ func runCount(cmd *cli.Command, args []string) error {
 			seen[by], stats[by] = p, cz
 		case vmu.ErrSkip:
 		case io.EOF:
-			line := whichLine(*csv)
+			line := Line(*csv)
 			for b, cz := range stats {
 				appendBy(line, b)
 				line.AppendUint(cz.Count, 6, linewriter.AlignRight)
 				line.AppendUint(cz.Missing, 6, linewriter.AlignRight)
 				line.AppendUint(cz.Error, 6, linewriter.AlignRight)
 				line.AppendUint(cz.Size, 6, linewriter.AlignRight)
-
-				os.Stdout.Write(append(line.Bytes(), '\n'))
-				line.Reset()
+				io.Copy(os.Stdout, line)
 			}
 			return nil
 		default:
@@ -214,13 +227,13 @@ func runDiff(cmd *cli.Command, args []string) error {
 		getBy = byChannel
 		gapBy = gapByChannel
 		appendBy = func(line *linewriter.Writer, p vmu.Packet) {
-			line.AppendBytes(whichChannel(p.VMUHeader.Channel), 4, linewriter.Text|linewriter.AlignLeft)
+			line.AppendBytes(vmu.WhichChannel(p.VMUHeader.Channel), 4, linewriter.Text|linewriter.AlignLeft)
 		}
 	case "origin":
 		getBy = byOrigin
 		gapBy = gapByOrigin
 		appendBy = func(line *linewriter.Writer, p vmu.Packet) {
-			line.AppendBytes(whichChannel(p.VMUHeader.Channel), 4, linewriter.Text|linewriter.AlignLeft)
+			line.AppendBytes(vmu.WhichChannel(p.VMUHeader.Channel), 4, linewriter.Text|linewriter.AlignLeft)
 			line.AppendUint(uint64(p.DataHeader.Origin), 2, linewriter.AlignCenter|linewriter.Hex|linewriter.WithZero)
 		}
 	default:
@@ -232,7 +245,7 @@ func runDiff(cmd *cli.Command, args []string) error {
 		return err
 	}
 	seen := make(map[uint8]vmu.Packet)
-	line := whichLine(*csv)
+	line := Line(*csv)
 	for {
 		switch p, err := d.Decode(false); err {
 		case nil, vmu.ErrInvalid:
@@ -248,10 +261,9 @@ func runDiff(cmd *cli.Command, args []string) error {
 					line.AppendInt(int64(g.Last), 8, linewriter.AlignRight)
 					line.AppendInt(int64(g.First), 8, linewriter.AlignRight)
 					line.AppendInt(int64(g.Missing()), 8, linewriter.AlignRight)
-					line.AppendString(g.Duration().String(), 10, linewriter.AlignRight)
+					line.AppendDuration(g.Duration(), 10, linewriter.AlignRight)
 
-					os.Stdout.Write(append(line.Bytes(), '\n'))
-					line.Reset()
+					io.Copy(os.Stdout, line)
 				}
 			}
 			seen[by] = p
@@ -310,23 +322,23 @@ func gapByOrigin(p, prev vmu.Packet, duration time.Duration) (ok bool, g rt.Gap)
 	}
 	return
 }
-
-func whichChannel(c uint8) []byte {
-	switch c {
-	case vmu.VIC1:
-		return vmu.ChanVic1
-	case vmu.VIC2:
-		return vmu.ChanVic2
-	case vmu.LRSD:
-		return vmu.ChanLRSD
-	default:
-		return vmu.Unknown
-	}
-}
-
-func whichMode(rt bool) []byte {
-	if rt {
-		return vmu.ModeRT
-	}
-	return vmu.ModePB
-}
+//
+// func whichChannel(c uint8) []byte {
+// 	switch c {
+// 	case vmu.VIC1:
+// 		return vmu.ChanVic1
+// 	case vmu.VIC2:
+// 		return vmu.ChanVic2
+// 	case vmu.LRSD:
+// 		return vmu.ChanLRSD
+// 	default:
+// 		return vmu.Unknown
+// 	}
+// }
+//
+// func whichMode(rt bool) []byte {
+// 	if rt {
+// 		return vmu.ModeRT
+// 	}
+// 	return vmu.ModePB
+// }
