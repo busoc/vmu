@@ -88,6 +88,7 @@ func (d *Dumper) dumpPacket(p Packet, valid bool) {
 		diff = int(p.Missing(other))
 	}
 
+	// d.line.AppendBytes(WhichChannel(v.Channel), 4, linewriter.AlignCenter|linewriter.Text)
 	d.line.AppendUint(uint64(v.Size), 7, linewriter.AlignRight)
 	d.line.AppendUint(uint64(h.Error), 4, linewriter.AlignRight|linewriter.Hex|linewriter.WithZero)
 	// packet VMU info
@@ -101,7 +102,7 @@ func (d *Dumper) dumpPacket(p Packet, valid bool) {
 	d.line.AppendTime(c.Acquisition(), rt.TimeFormat, linewriter.AlignCenter)
 	d.line.AppendUint(uint64(c.Counter), 8, linewriter.AlignRight)
 	d.line.AppendBytes(c.UserInfo(), 16, linewriter.AlignLeft|linewriter.Text)
-	d.line.AppendString(p.DataType(), 8, linewriter.AlignRight)
+	d.line.AppendString(p.DataType(), 6, linewriter.AlignRight)
 	// d.line.AppendString(p.String(), 64, linewriter.AlignLeft)
 	// packet sums and validity state
 	d.line.AppendUint(uint64(p.Sum), 8, linewriter.AlignRight|linewriter.Hex|linewriter.WithZero)

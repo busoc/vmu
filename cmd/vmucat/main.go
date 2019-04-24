@@ -33,17 +33,17 @@ var commands = []*cli.Command{
 	{
 		Usage: "take [-e with-errors] [-i channel] [-d datadir] <file...>",
 		Short: "",
-		Run: runTake,
+		Run:   runTake,
 	},
 	{
 		Usage: "merge <final> <file...>",
 		Short: "merge and reorder packets from multiple files",
-		Run: runMerge,
+		Run:   runMerge,
 	},
 	{
 		Usage: "extract [-d datadir] [-e with-errors] [-c channel] <file...>",
 		Short: "",
-		Run: nil,
+		Run:   nil,
 	},
 }
 

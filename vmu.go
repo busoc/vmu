@@ -347,6 +347,10 @@ func decodePacket(buffer []byte, data bool) (p Packet, err error) {
 	return
 }
 
+func DecodeHRDP(body []byte) (HRDPHeader, error) {
+	return decodeHRDP(body)
+}
+
 func decodeHRDP(body []byte) (HRDPHeader, error) {
 	var h HRDPHeader
 	if len(body) < HRDPHeaderLen {
@@ -363,6 +367,10 @@ func decodeHRDP(body []byte) (HRDPHeader, error) {
 	h.HRDPFine = uint8(body[17])
 
 	return h, nil
+}
+
+func DecodeVMU(body []byte) (VMUHeader, error) {
+	return decodeVMU(body)
 }
 
 func decodeVMU(body []byte) (VMUHeader, error) {
