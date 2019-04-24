@@ -16,6 +16,7 @@ import (
 )
 
 var (
+	ErrEmpty    = errors.New("empty")
 	ErrSkip     = errors.New("skip")
 	ErrInvalid  = errors.New("invalid packet")
 	ErrSyncword = errors.New("invalid syncword")
@@ -24,12 +25,13 @@ var (
 const Syncword = 0xf82e3553
 
 const (
-	UPILen        = 32
-	HRDPHeaderLen = 18
-	HRDLHeaderLen = 8
-	VMUHeaderLen  = 16
-	SCCHeaderLen  = 56
-	IMGHeaderLen  = 76
+	UPILen         = 32
+	HRDPHeaderLen  = 18
+	HRDLHeaderLen  = 8
+	HRDLTrailerLen = 4
+	VMUHeaderLen   = 16
+	SCCHeaderLen   = 56
+	IMGHeaderLen   = 76
 )
 
 const (
@@ -95,6 +97,28 @@ type Packet struct {
 	DataHeader
 	Data []byte
 	Sum  uint32
+}
+
+func (p Packet) Marshal() ([]byte, error) {
+	if len(p.Data) == 0 {
+		return nil, ErrEmpty
+	}
+	var offset int
+	size := HRDLHeaderLen + VMUHeaderLen + HRDLTrailerLen + len(p.Data)
+	if p.VMUHeader.Channel == LRSD {
+		size += SCCHeaderLen
+	} else {
+		size += IMGHeaderLen
+	}
+	buf := make([]byte, size)
+
+	offset += copy(buf[offset:], encodeHRDL(VMUHeaderLen+len(p.Data)))
+	offset += copy(buf[offset:], encodeVMU(p.VMUHeader))
+	offset += copy(buf[offset:], encodeData(p.DataHeader))
+	offset += copy(buf[offset:], p.Data)
+	binary.LittleEndian.PutUint32(buf[offset:], p.Sum)
+
+	return buf, nil
 }
 
 func (p Packet) Export(w io.Writer, format string) error {
@@ -188,13 +212,38 @@ func (p Packet) IsRealtime() bool {
 	return p.VMUHeader.Origin == p.DataHeader.Origin
 }
 
+func WithChannel(i int, valid bool) func(VMUHeader, error) (bool, error) {
+	ch := uint8(i)
+	return func(v VMUHeader, err error) (bool, error) {
+		if ch > 0 && ch != v.Channel {
+			return false, nil
+		}
+		if !valid && err == ErrInvalid {
+			return false, err
+		} else {
+			err = nil
+		}
+		return true, err
+	}
+}
+
 type Decoder struct {
+	filter func(VMUHeader, error) (bool, error)
 	inner  io.Reader
 	buffer []byte
 }
 
-func NewDecoder(r io.Reader) *Decoder {
+func NewDecoder(r io.Reader, filter func(VMUHeader, error) (bool, error)) *Decoder {
+	if filter == nil {
+		filter = func(_ VMUHeader, err error) (bool, error) {
+			if err != nil {
+				return false, err
+			}
+			return true, err
+		}
+	}
 	return &Decoder{
+		filter: filter,
 		inner:  r,
 		buffer: make([]byte, BufferSize),
 	}
@@ -205,11 +254,23 @@ func DecodePacket(buffer []byte, data bool) (Packet, error) {
 }
 
 func (d *Decoder) Decode(data bool) (p Packet, err error) {
-	n, err := d.inner.Read(d.buffer)
+	var (
+		keep bool
+		n    int
+	)
+	n, err = d.inner.Read(d.buffer)
 	if err != nil {
 		return
 	}
-	return decodePacket(d.buffer[:n], data)
+	p, err = decodePacket(d.buffer[:n], data)
+	if err != nil {
+		return
+	}
+	keep, err = d.filter(p.VMUHeader, err)
+	if !keep {
+		return d.Decode(data)
+	}
+	return
 }
 
 type HRDPHeader struct {
@@ -373,6 +434,27 @@ func DecodeVMU(body []byte) (VMUHeader, error) {
 	return decodeVMU(body)
 }
 
+func encodeHRDL(n int) []byte {
+	buf := make([]byte, HRDLHeaderLen)
+
+	binary.BigEndian.PutUint32(buf, Syncword)
+	binary.LittleEndian.PutUint32(buf[4:], uint32(n))
+
+	return buf
+}
+
+func encodeVMU(v VMUHeader) []byte {
+	buf := make([]byte, VMUHeaderLen)
+
+	buf[0] = byte(v.Channel)
+	buf[1] = byte(v.Origin)
+	binary.LittleEndian.PutUint32(buf[4:], v.Sequence)
+	binary.LittleEndian.PutUint32(buf[8:], v.Coarse)
+	binary.LittleEndian.PutUint16(buf[12:], v.Fine)
+
+	return buf
+}
+
 func decodeVMU(body []byte) (VMUHeader, error) {
 	var v VMUHeader
 	if len(body) < HRDLHeaderLen+VMUHeaderLen {
@@ -390,6 +472,50 @@ func decodeVMU(body []byte) (VMUHeader, error) {
 	v.Fine = binary.LittleEndian.Uint16(body[20:])
 
 	return v, nil
+}
+
+func encodeData(v DataHeader) []byte {
+	var n int
+	switch v.Property >> 4 {
+	case 1:
+		n = SCCHeaderLen
+	case 2:
+		n = IMGHeaderLen
+	default:
+		return nil
+	}
+	buf := make([]byte, n)
+
+	buf[0] = byte(v.Property)
+	binary.LittleEndian.PutUint16(buf[1:], v.Stream)
+	binary.LittleEndian.PutUint32(buf[3:], v.Counter)
+	binary.LittleEndian.PutUint64(buf[7:], uint64(v.AcqTime))
+	binary.LittleEndian.PutUint64(buf[15:], uint64(v.AuxTime))
+	buf[23] = byte(v.Origin)
+
+	switch v.Property >> 4 {
+	case 1:
+		copy(buf[24:], v.UPI[:])
+	case 2:
+	default:
+		buf[24] = byte(v.Type)
+
+		pixels := uint32(v.PixelsX)<<16 | uint32(v.PixelsY)
+		binary.LittleEndian.PutUint32(buf[25:], pixels)
+
+		roi := uint64(v.OffsetX)<<48 | uint64(v.SizeX)<<32 | uint64(v.OffsetY)<<16 | uint64(v.SizeY)
+		binary.LittleEndian.PutUint64(buf[29:], roi)
+		binary.LittleEndian.PutUint16(buf[37:], v.Dropping)
+
+		scaling := uint32(v.ScaleX)<<16 | uint32(v.ScaleY)
+		binary.LittleEndian.PutUint32(buf[39:], scaling)
+		buf[43] = byte(v.Ratio)
+
+		copy(buf[44:], v.UPI[:])
+		return nil
+	}
+
+	return buf
 }
 
 func decodeData(body []byte) (DataHeader, error) {
