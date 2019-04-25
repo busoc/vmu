@@ -60,7 +60,7 @@ func main() {
 		}
 	}()
 	log.SetFlags(0)
-	if err := cli.Run(commands, cli.Usage("vrx", helpText, commands), nil); err != nil {
+	if err := cli.Run(commands, cli.Usage("vmucat", helpText, commands), nil); err != nil {
 		log.Fatalln(err)
 	}
 }

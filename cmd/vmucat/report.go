@@ -14,6 +14,11 @@ import (
 	"github.com/midbel/linewriter"
 )
 
+const (
+	Channel = "channel"
+	Origin  = "origin"
+)
+
 func runList(cmd *cli.Command, args []string) error {
 	csv := cmd.Flag.Bool("c", false, "csv format")
 	keepInvalid := cmd.Flag.Bool("e", false, "keep invalid packets")
@@ -56,6 +61,7 @@ func runList(cmd *cli.Command, args []string) error {
 		}
 	}
 }
+
 func runCount(cmd *cli.Command, args []string) error {
 	csv := cmd.Flag.Bool("c", false, "csv format")
 	keepInvalid := cmd.Flag.Bool("e", false, "keep invalid packets")
@@ -64,30 +70,6 @@ func runCount(cmd *cli.Command, args []string) error {
 	if err := cmd.Flag.Parse(args); err != nil {
 		return err
 	}
-	var (
-		getBy  func(vmu.Packet, time.Duration) key
-		missBy func(vmu.Packet, vmu.Packet) uint64
-	)
-	switch strings.ToLower(*by) {
-	case "channel", "":
-		getBy = byChannel
-		missBy = func(p, prev vmu.Packet) uint64 {
-			if p.VMUHeader.Sequence < prev.VMUHeader.Sequence {
-				return 0
-			}
-			return uint64(p.VMUHeader.Sequence-prev.VMUHeader.Sequence) - 1
-		}
-	case "origin":
-		getBy = byOrigin
-		missBy = func(p, prev vmu.Packet) uint64 {
-			if p.DataHeader.Counter < prev.DataHeader.Counter {
-				return 0
-			}
-			return uint64(p.DataHeader.Counter-prev.DataHeader.Counter) - 1
-		}
-	default:
-		return fmt.Errorf("unknown value %s", *by)
-	}
 
 	mr, err := rt.Browse(cmd.Flag.Args(), true)
 	if err != nil {
@@ -95,55 +77,27 @@ func runCount(cmd *cli.Command, args []string) error {
 	}
 	defer mr.Close()
 
-	d := vmu.NewDecoder(rt.NewReader(mr), nil)
-
-	stats := make(map[key]rt.Coze)
-	seen := make(map[key]vmu.Packet)
-	for {
-		switch p, err := d.Decode(false); err {
-		case nil, vmu.ErrInvalid:
-			by := getBy(p, *interval)
-			cz := stats[by]
-
-			cz.Count++
-			cz.Size += uint64(p.VMUHeader.Size)
-			if err == vmu.ErrInvalid {
-				cz.Error++
-				if !*keepInvalid {
-					continue
-				}
-			}
-			cz.Last, cz.EndTime = uint64(p.Sequence), p.Timestamp()
-			if cz.StartTime.IsZero() {
-				cz.First, cz.StartTime = cz.Last, cz.EndTime
-			}
-			if prev, ok := seen[by]; ok {
-				cz.Missing += missBy(p, prev)
-			}
-			seen[by], stats[by] = p, cz
-		case vmu.ErrSkip:
-		case io.EOF:
-			line := Line(*csv)
-			for k, cz := range stats {
-				line.AppendBytes(vmu.WhichChannel(k.Channel), 4, linewriter.Text|linewriter.AlignLeft)
-				if strings.ToLower(*by) == "origin" {
-					line.AppendUint(uint64(k.Origin), 2, linewriter.AlignCenter|linewriter.Hex|linewriter.WithZero)
-				}
-				line.AppendUint(cz.Count, 6, linewriter.AlignRight)
-				line.AppendUint(cz.Missing, 6, linewriter.AlignRight)
-				line.AppendUint(cz.Error, 6, linewriter.AlignRight)
-				line.AppendSize(int64(cz.Size), 8, linewriter.AlignRight)
-				line.AppendUint(cz.First, 8, linewriter.AlignRight)
-				line.AppendTime(cz.StartTime, rt.TimeFormat, linewriter.AlignRight)
-				line.AppendUint(cz.Last, 8, linewriter.AlignRight)
-				line.AppendTime(cz.EndTime, rt.TimeFormat, linewriter.AlignRight)
-				io.Copy(os.Stdout, line)
-			}
-			return nil
-		default:
-			return err
-		}
+	stats, err := countPackets(rt.NewReader(mr), strings.ToLower(*by), !*keepInvalid, *interval)
+	if err != nil {
+		return err
 	}
+	line := Line(*csv)
+	for k, cz := range stats {
+		line.AppendBytes(vmu.WhichChannel(k.Channel), 4, linewriter.Text|linewriter.AlignLeft)
+		if strings.ToLower(*by) == Origin {
+			line.AppendUint(uint64(k.Origin), 2, linewriter.AlignCenter|linewriter.Hex|linewriter.WithZero)
+		}
+		line.AppendUint(cz.Count, 6, linewriter.AlignRight)
+		line.AppendUint(cz.Missing, 6, linewriter.AlignRight)
+		line.AppendUint(cz.Error, 6, linewriter.AlignRight)
+		line.AppendSize(int64(cz.Size), 8, linewriter.AlignRight)
+		line.AppendUint(cz.First, 8, linewriter.AlignRight)
+		line.AppendTime(cz.StartTime, rt.TimeFormat, linewriter.AlignRight)
+		line.AppendUint(cz.Last, 8, linewriter.AlignRight)
+		line.AppendTime(cz.EndTime, rt.TimeFormat, linewriter.AlignRight)
+		io.Copy(os.Stdout, line)
+	}
+	return nil
 }
 
 func runDiff(cmd *cli.Command, args []string) error {
@@ -161,10 +115,10 @@ func runDiff(cmd *cli.Command, args []string) error {
 	)
 
 	switch strings.ToLower(*by) {
-	case "channel", "":
+	case Channel, "":
 		getBy = byChannel
 		gapBy = gapByChannel
-	case "origin":
+	case Origin:
 		getBy = byOrigin
 		gapBy = gapByOrigin
 	default:
@@ -266,4 +220,64 @@ func gapByOrigin(p, prev vmu.Packet, duration time.Duration) (ok bool, g rt.Gap)
 		ok = true
 	}
 	return
+}
+
+func countPackets(r io.Reader, by string, invalid bool, interval time.Duration) (map[key]rt.Coze, error) {
+	var (
+		getBy  func(vmu.Packet, time.Duration) key
+		missBy func(vmu.Packet, vmu.Packet) uint64
+	)
+	switch by {
+	case Channel, "":
+		getBy = byChannel
+		missBy = func(p, prev vmu.Packet) uint64 {
+			if p.VMUHeader.Sequence < prev.VMUHeader.Sequence {
+				return 0
+			}
+			return uint64(p.VMUHeader.Sequence-prev.VMUHeader.Sequence) - 1
+		}
+	case Origin:
+		getBy = byOrigin
+		missBy = func(p, prev vmu.Packet) uint64 {
+			if p.DataHeader.Counter < prev.DataHeader.Counter {
+				return 0
+			}
+			return uint64(p.DataHeader.Counter-prev.DataHeader.Counter) - 1
+		}
+	default:
+		return nil, fmt.Errorf("unknown value %s", by)
+	}
+	d := vmu.NewDecoder(r, nil)
+	stats := make(map[key]rt.Coze)
+	seen := make(map[key]vmu.Packet)
+	for {
+		p, err := d.Decode(false)
+		switch err {
+		case nil, vmu.ErrInvalid:
+			by := getBy(p, interval)
+			cz := stats[by]
+
+			cz.Count++
+			cz.Size += uint64(p.VMUHeader.Size)
+			if err == vmu.ErrInvalid {
+				cz.Error++
+				if !invalid {
+					continue
+				}
+			}
+			cz.Last, cz.EndTime = uint64(p.Sequence), p.Timestamp()
+			if cz.StartTime.IsZero() {
+				cz.First, cz.StartTime = cz.Last, cz.EndTime
+			}
+			if prev, ok := seen[by]; ok {
+				cz.Missing += missBy(p, prev)
+			}
+			seen[by], stats[by] = p, cz
+		case vmu.ErrSkip:
+		case io.EOF:
+			return stats, nil
+		default:
+			return nil, err
+		}
+	}
 }
