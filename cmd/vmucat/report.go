@@ -90,7 +90,11 @@ func runCount(cmd *cli.Command, args []string) error {
 		line.AppendUint(cz.Count, 6, linewriter.AlignRight)
 		line.AppendUint(cz.Missing, 6, linewriter.AlignRight)
 		line.AppendUint(cz.Error, 6, linewriter.AlignRight)
-		line.AppendSize(int64(cz.Size), 8, linewriter.AlignRight)
+		if *csv {
+			line.AppendUint(cz.Size, 8, linewriter.AlignRight)
+		} else {
+			line.AppendSize(int64(cz.Size), 8, linewriter.AlignRight)
+		}
 		line.AppendUint(cz.First, 8, linewriter.AlignRight)
 		line.AppendTime(cz.StartTime, rt.TimeFormat, linewriter.AlignRight)
 		line.AppendUint(cz.Last, 8, linewriter.AlignRight)
