@@ -338,7 +338,18 @@ type DataHeader struct {
 }
 
 func (d DataHeader) UserInfo() []byte {
-	return userInfo(make([]byte, UPILen), d.UPI)
+	upi := userInfo(make([]byte, UPILen), d.UPI)
+	if len(upi) == 0 {
+		switch d.Property >> 4 {
+		case 1:
+			upi = upiScience
+		case 2:
+			upi = upiImage
+		default:
+			upi = []byte("unknown")
+		}
+	}
+	return upi
 }
 
 func (d DataHeader) Acquisition() time.Time {
