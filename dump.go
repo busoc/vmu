@@ -40,7 +40,7 @@ func Dump(w io.Writer, csv bool) *Dumper {
 	}
 	return &Dumper{
 		inner: w,
-		line:  linewriter.NewWriter(1024, options...),
+		line:  linewriter.NewWriter(4096, options...),
 		seen:  make(map[uint8]Packet),
 	}
 }
@@ -56,7 +56,6 @@ func (d *Dumper) DumpRaw(body []byte) {
 }
 
 func (d *Dumper) Dump(body []byte, invalid, raw bool) error {
-	defer d.line.Reset()
 	var (
 		err error
 		p   Packet
@@ -68,8 +67,11 @@ func (d *Dumper) Dump(body []byte, invalid, raw bool) error {
 		if err == nil || (err == ErrInvalid && invalid) {
 			d.dumpPacket(p, err != ErrInvalid)
 			d.seen[p.VMUHeader.Channel] = p
-			d.inner.Write(append(d.line.Bytes(), '\n'))
+
 		}
+	}
+	if err == nil || err == ErrInvalid {
+		io.Copy(d.inner, d.line)
 	}
 	return err
 }

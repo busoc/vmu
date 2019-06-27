@@ -1,7 +1,8 @@
 package main
 
 import (
-	"log"
+	"fmt"
+	"os"
 
 	"github.com/midbel/cli"
 	"github.com/midbel/linewriter"
@@ -54,15 +55,20 @@ Use {{.Name}} [command] -h for more information about its usage.
 `
 
 func main() {
-	defer func() {
-		if err := recover(); err != nil {
-			log.Fatalf("unexpected error: %s", err)
-		}
-	}()
-	log.SetFlags(0)
-	if err := cli.Run(commands, cli.Usage("vmucat", helpText, commands), nil); err != nil {
-		log.Fatalln(err)
+	// defer func() {
+	// 	if err := recover(); err != nil {
+	// 		log.Fatalf("unexpected error: %s", err)
+	// 	}
+	// }()
+	// log.SetFlags(0)
+	err := cli.Run(commands, cli.Usage("vmucat", helpText, commands), nil)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
 	}
+	// if err := cli.Run(commands, cli.Usage("vmucat", helpText, commands), nil); err != nil {
+	// 	log.Fatalln(err)
+	// }
 }
 
 func Line(csv bool) *linewriter.Writer {
