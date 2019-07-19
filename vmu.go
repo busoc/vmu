@@ -212,9 +212,9 @@ func (p Packet) IsRealtime() bool {
 	return p.VMUHeader.Origin == p.DataHeader.Origin
 }
 
-func WithChannel(i int, valid bool) func(VMUHeader, error) (bool, error) {
+func WithChannel(i int, valid bool) func(VMUHeader, DataHeader, error) (bool, error) {
 	ch := uint8(i)
-	return func(v VMUHeader, err error) (bool, error) {
+	return func(v VMUHeader, _ DataHeader, err error) (bool, error) {
 		if ch > 0 && ch != v.Channel {
 			return false, nil
 		}
@@ -227,15 +227,30 @@ func WithChannel(i int, valid bool) func(VMUHeader, error) (bool, error) {
 	}
 }
 
+func WithOrigin(i int, valid bool) func(VMUHeader, DataHeader, error) (bool, error) {
+	ori := uint8(i)
+	return func(_ VMUHeader, d DataHeader, err error) (bool, error) {
+		if ori > 0 && ori != d.Origin {
+			return false, nil
+		}
+		if !valid && err == ErrInvalid {
+			return false, err
+		} else {
+			err = nil
+		}
+		return true, err
+	}
+}
+
 type Decoder struct {
-	filter func(VMUHeader, error) (bool, error)
+	filter func(VMUHeader, DataHeader, error) (bool, error)
 	inner  io.Reader
 	buffer []byte
 }
 
-func NewDecoder(r io.Reader, filter func(VMUHeader, error) (bool, error)) *Decoder {
+func NewDecoder(r io.Reader, filter func(VMUHeader, DataHeader, error) (bool, error)) *Decoder {
 	if filter == nil {
-		filter = func(_ VMUHeader, err error) (bool, error) {
+		filter = func(_ VMUHeader, _ DataHeader, err error) (bool, error) {
 			if err != nil {
 				return false, err
 			}
@@ -247,10 +262,6 @@ func NewDecoder(r io.Reader, filter func(VMUHeader, error) (bool, error)) *Decod
 		inner:  r,
 		buffer: make([]byte, BufferSize),
 	}
-}
-
-func DecodePacket(buffer []byte, data bool) (Packet, error) {
-	return decodePacket(buffer, data)
 }
 
 func (d *Decoder) Decode(data bool) (p Packet, err error) {
@@ -266,11 +277,24 @@ func (d *Decoder) Decode(data bool) (p Packet, err error) {
 	if err != nil {
 		return
 	}
-	keep, err = d.filter(p.VMUHeader, err)
+	keep, err = d.filter(p.VMUHeader, p.DataHeader, err)
 	if !keep {
 		return d.Decode(data)
 	}
 	return
+}
+
+func (d *Decoder) Marshal() ([]byte, time.Time, error) {
+	p, err := d.Decode(true)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	buf, err := p.Marshal()
+	return buf, p.Timestamp(), err
+}
+
+func DecodePacket(buffer []byte, data bool) (Packet, error) {
+	return decodePacket(buffer, data)
 }
 
 type HRDPHeader struct {
